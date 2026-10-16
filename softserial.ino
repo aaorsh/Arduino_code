@@ -1,5 +1,5 @@
 #include <SoftwareSerial.h>
-// 软串口：RX不用(255)，TX=D9
+// 软串口：RX不用(255)，TX=D11
 SoftwareSerial SoftSerial(255, 11);
 
 //4个按键引脚
