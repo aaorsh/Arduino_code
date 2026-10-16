@@ -1,0 +1,146 @@
+ArmAngles nijie(ArmPoint target, bool elbowUp)
+{
+    ArmAngles res;
+    res.valid = false;
+
+    float x = target.x;
+    float y = target.y;
+    float H = target.H;
+
+    //1、计算水平总投影L
+    float L = sqrt(x*x + y*y);
+    float L_minus_L4 = L - L4;
+
+    //奇异点检测：L-L4接近0，AC杆接近竖直，分母趋近0，方程病态无解
+    if(fabs(L_minus_L4) < 1.0f)
+    {
+        return res;
+    }
+
+    //2、计算theta6：K杆与水平面的锐角
+    float deltaH = H - L3;
+    float theta6_rad = atan(fabs(deltaH) / L_minus_L4);
+    float theta6_deg = rad2deg(theta6_rad);
+
+    //3、求θ5 = ∠ACD，严格和推导文档公式保持一致
+    float theta5_deg;
+    if(deltaH >= 0.0f)
+    {
+        theta5_deg = 90.0f + theta6_deg;
+    }
+    else
+    {
+        theta5_deg = 90.0f - theta6_deg;
+    }
+
+    //4、求AC杆长度K
+    float K = L_minus_L4 / cos(theta6_rad);
+
+    //三角形构成条件：K必须在 |L1‑L2| ~ L1+L2之间，否则目标点在工作空间之外
+    if( K > (L1 + L2) || K < fabs(L1 - L2) )
+    {
+        return res;
+    }
+
+    //5、余弦定理计算cosθ2 cosθ3
+    //⚠浮点误差会让数值轻微超出[-1,1]，acos会返回NaN，必须constrain钳位！
+    float cosTheta2 = (L1*L1 + L2*L2 - K*K) / (2.0f * L1 * L2);
+    cosTheta2 = constrain(cosTheta2, -1.0f, 1.0f);
+
+    float cosTheta3 = (K*K + L2*L2 - L1*L1) / (2.0f * K * L2);
+    cosTheta3 = constrain(cosTheta3, -1.0f, 1.0f);
+
+    //acos返回值域 [0 , π]，默认得到【肘向上】解
+    float theta2_rad = acos(cosTheta2);
+    float theta3_rad = acos(cosTheta3);
+
+    float theta2_deg = rad2deg(theta2_rad);
+    float theta3_deg = rad2deg(theta3_rad);
+
+    //6、装配几何关系求舵机β γ，与推导论文公式完全一致
+    float beta_deg  = 360.0f - theta5_deg - theta3_deg - theta2_deg;
+    float gamma_deg = theta2_deg + fabs(beta_deg - 90.0f);
+
+    //7、基座旋转角α；arduino atan2(y , x) 参数顺序 y在前 x在后，四象限求解
+    float alpha_rad = atan2(y , x);
+    float alpha_deg = rad2deg(alpha_rad);
+
+    //角度归一化
+    res.alpha  = normalizeDeg(alpha_deg);
+    res.beta   = normalizeDeg(beta_deg);
+    res.gamma  = normalizeDeg(gamma_deg);
+    res.valid  = true;
+
+    return res;
+}
+
+ArmPoint zhengjie(ArmAngles ang)
+{
+    ArmPoint pt;
+    pt.valid = false;
+
+    float alpha_deg = ang.alpha;
+    float beta_deg  = ang.beta;
+    float gamma_deg = ang.gamma;
+
+    //----------1.由beta、gamma求解theta2，解开绝对值----------
+    float theta2_deg;
+    if(beta_deg >= 90.0f)
+    {
+        //case1 β >=90°： |β‑90| = β‑90
+        theta2_deg = gamma_deg - beta_deg + 90.0f;
+    }
+    else
+    {
+        //case2 β <90°： |β‑90| = 90‑β
+        theta2_deg = gamma_deg + beta_deg - 90.0f;
+    }
+
+    float theta2_rad = deg2rad(theta2_deg);
+
+    //----------2.余弦定理求K(AC长度)----------
+    float K = sqrt(L1*L1 + L2*L2 - 2*L1*L2*cos(theta2_rad));
+
+    //----------3.正弦定理求θ3----------
+    // L1 / sinθ3 = K / sinθ2
+
+    // float sinTheta3 = L1 * sin(theta2_rad) / K;
+    // sinTheta3 = constrain(sinTheta3,-1.0f,1.0f);
+    // float theta3_rad = asin(sinTheta3);
+
+    // ====== 用atan2求theta3，彻底消除asin象限歧义 ======
+float cosTheta3 = (L1*L1 + K*K - L2*L2) / (2.0f * L1 * K);
+cosTheta3 = constrain(cosTheta3, -1.0f, 1.0f);
+float theta3_rad = acos(cosTheta3);
+
+
+    float theta3_deg = rad2deg(theta3_rad);
+
+    //----------4.装配关系求θ5： β = 360 −θ5 −θ3 −θ2 →变形解θ5----------
+    //float theta5_deg = 360.0f - beta_deg - theta3_deg - theta2_deg;
+   float theta5_deg = 360.0f - beta_deg - gamma_deg - theta3_deg - theta2_deg;
+    float theta5_rad = deg2rad(theta5_deg);
+
+    //----------5.求水平总投影L  L = L4 + K*cos(|θ5−90°|) 等价 L = L4 + K*sinθ5----------
+    float L = L4 + K * sin(theta5_rad);
+
+    //----------6.极坐标转x,y----------
+    float alpha_rad = deg2rad(alpha_deg);
+    pt.x = L * cos(alpha_rad);
+    pt.y = L * sin(alpha_rad);
+
+    //----------7.求A点离地高度H（正解也算出H，用于和逆解互校验）----------
+    float theta6_deg;
+    if(theta5_deg >= 90.0f)
+    {
+        theta6_deg = theta5_deg - 90.0f;
+    }
+    else
+    {
+        theta6_deg = 90.0f - theta5_deg;
+    }
+    float deltaH = K * sin(deg2rad(theta6_deg)) * ((theta5_deg>=90)? 1.0f:-1.0f);
+    pt.H = L3 + deltaH;
+
+    pt.valid = true;
+    r
