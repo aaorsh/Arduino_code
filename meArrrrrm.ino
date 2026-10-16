@@ -15,7 +15,7 @@ SoftwareSerial SoftSerial(0,1);
 #define fArmPin 8
 #define basePin 9
 
-#define neichun 32
+#define neichun 64
 
 
 
