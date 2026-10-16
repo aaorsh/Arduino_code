@@ -1,4 +1,4 @@
-ArmAngles nijie(ArmPoint target, bool elbowUp)
+ArmAngles nijie(ArmPoint target)//不需要判断，锁死角度固定高的位置，由于没有使用矩阵计算/简化推导，容易出现机械臂有滑动的现象
 {
     ArmAngles res;
     res.valid = false;
@@ -50,7 +50,7 @@ ArmAngles nijie(ArmPoint target, bool elbowUp)
     float cosTheta3 = (K*K + L2*L2 - L1*L1) / (2.0f * K * L2);
     cosTheta3 = constrain(cosTheta3, -1.0f, 1.0f);
 
-    //acos返回值域 [0 , π]，默认得到【肘向上】解
+    //acos返回值域 [0 , π]，默认得到【肘向上】解//向下的物理结构不存在
     float theta2_rad = acos(cosTheta2);
     float theta3_rad = acos(cosTheta3);
 
